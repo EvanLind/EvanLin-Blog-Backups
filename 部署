@@ -1,0 +1,104 @@
+1、测试Django程序是否能运行
+	python manage.py runserver
+2、ubuntu安装nginx
+	sudo apt-get install python-dev nginx
+3、安装supervisor（安装 supervisor, 一个专门用来管理进程的工具，我们用它来管理 gunicorn/uwsgi）
+	sudo pip install supervisor
+4、安装uwsgi
+	sudo pip install uwsgi
+5、测试运行uwsgi
+	uwsgi --http :8001 --chdir /home/evanlin/Code/EvanLin/  --module EvanLin.wsgi
+
+
+
+
+1、安装nginx
+	sudo apt-get install nginx
+
+2、安装uwsgi
+	apt-get install python-dev #不安装这个，下面的安装可能会失败
+	pip install uwsgi
+
+3、测试Django项目是否正常
+	python manage.py runserver 0.0.0.0:8000
+
+4、测试运行uwsgi
+	uwsgi --http :8001 --chdir /home/evanlin/Code/EvanLin/  --module EvanLin.wsgi
+
+5、配置nginx
+	将uwsgi_params文件拷贝到项目文件夹下。uwsgi_params文件在/etc/nginx/目录下，也可以从这个页面下载
+	在项目文件夹下创建文件mysite_nginx.conf,填入并修改下面内容：
+		# mysite_nginx.conf
+		# the upstream component nginx needs to connect to
+		upstream django {
+		    # server unix:///path/to/your/mysite/mysite.sock; # for a file socket
+		    server 127.0.0.1:8001; # for a web port socket (we'll use this first)
+		}
+		# configuration of the server
+		server {
+		    # the port your site will be served on
+		    listen      8000;
+		    # the domain name it will serve for
+		    server_name .example.com; # substitute your machine's IP address or FQDN
+		    charset     utf-8;
+
+		    # max upload size
+		    client_max_body_size 75M;   # adjust to taste
+
+		    # Django media
+		    location /media  {
+		        alias /path/to/your/mysite/media;  # your Django project's media files - amend as required
+		    }
+
+		    location /static {
+		        alias /path/to/your/mysite/static; # your Django project's static files - amend as required
+		    }
+
+		    # Finally, send all non-media requests to the Django server.
+		    location / {
+		        uwsgi_pass  django;
+		        include     /path/to/your/mysite/uwsgi_params; # the uwsgi_params file you installed
+		    }
+		}
+6、这个configuration文件告诉nginx从文件系统中拉起media和static文件作为服务，同时相应django的request
+	在/etc/nginx/sites-enabled目录下创建本文件的连接，使nginx能够使用它：
+		sudo ln -s ~/path/to/your/mysite/mysite_nginx.conf /etc/nginx/sites-enabled/
+	部署static文件
+	在django的setting文件中，添加下面一行内容：
+		STATIC_ROOT = os.path.join(BASE_DIR, "static/")
+	然后运行：
+		python manage.py collectstatic
+	测试nginx
+	首先重启nginx服务：
+		sudo /etc/init.d/nginx restart
+	然后检查media文件是否已经正常拉起：
+	在目录/path/to/your/project/project/media directory下添加文件meida.png，然后访问http://example.com:8000/media/media.png ，成功后进行下一步测试。
+
+7、nginx and uWSGI and test.py
+	执行下面代码测试能否让nginx在页面上显示hello, world
+		uwsgi --socket :8001 --wsgi-file test.py
+	访问http://example.com:8000 ,如果显示hello world，则下面环节是否通畅:
+	the web client <-> the web server <-> the socket <-> uWSGI <-> Python
+	用UNIX socket取代TCP port
+	对mysite_nginx.conf做如下修改：
+		server unix:///path/to/your/mysite/mysite.sock; # for a file socket
+		# server 127.0.0.1:8001; # for a web port socket (we'll use this first)
+	重启nginx，并在此运行uWSGI
+		sudo /etc/init.d/nginx restart
+		uwsgi --socket mysite.sock --wsgi-file test.py
+		//uwsgi --socket evanlin.sock --chdir /home/web/EvanLin/  --module EvanLin.wsgi --chmod-socket=666
+
+	打开 http://example.com:8000/ ，看看是否成功
+	如果没有成功:
+	检查 nginx error log(/var/log/nginx/error.log)。如果错误如下：
+		connect() to unix:///path/to/your/mysite/mysite.sock failed (13: Permission
+	denied)
+	添加socket权限再次运行：
+		uwsgi --socket mysite.sock --wsgi-file test.py --chmod-socket=666 # (very permissive)
+	or
+		uwsgi --socket mysite.sock --wsgi-file test.py --chmod-socket=664 # (more sensible)
+
+
+
+				//uwsgi --socket evanlin.sock --chdir /home/web/EvanLin/  --module EvanLin.wsgi --chmod-socket=666 &
+				//uwsgi --socket mysite.sock --chdir /home/web/mysite/  --module mysite.wsgi --chmod-socket=666 &
